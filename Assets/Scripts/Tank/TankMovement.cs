@@ -24,7 +24,6 @@ public class TankMovement : MonoBehaviour
         m_Rigidbody = GetComponent<Rigidbody>();
     }
 
-
     private void OnEnable ()
     {
         m_Rigidbody.isKinematic = false;
