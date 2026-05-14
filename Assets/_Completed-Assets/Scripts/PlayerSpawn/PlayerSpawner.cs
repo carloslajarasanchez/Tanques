@@ -7,7 +7,7 @@ public class PlayerSpawner : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        // Solo el servidor decide dónde poner a cada uno
+        // Solo el servidor decide dÃ³nde poner a cada uno
         if (IsServer)
         {
             int index = 0;

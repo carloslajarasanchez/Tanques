@@ -12,7 +12,7 @@ public class LobbyManager : MonoBehaviour
 
     private void Awake()
     {
-        // Al empezar, el botón de "Empezar Partida" está oculto
+        // Al empezar, el botÃ³n de "Empezar Partida" estÃ¡ oculto
         startButton.gameObject.SetActive(false);
 
         hostBtn.onClick.AddListener(() => {
@@ -29,7 +29,7 @@ public class LobbyManager : MonoBehaviour
             // Solo el Servidor/Host puede cambiar de escena para todos
             if (NetworkManager.Singleton.IsServer)
             {
-                NetworkManager.Singleton.SceneManager.LoadScene("GameScene", LoadSceneMode.Single);
+                NetworkManager.Singleton.SceneManager.LoadScene("_Complete-Game", LoadSceneMode.Single);
             }
         });
     }
@@ -39,7 +39,7 @@ public class LobbyManager : MonoBehaviour
         hostBtn.gameObject.SetActive(false);
         clientBtn.gameObject.SetActive(false);
 
-        // Si soy el Host, muestro el botón para iniciar la partida
+        // Si soy el Host, muestro el botÃ³n para iniciar la partida
         if (NetworkManager.Singleton.IsHost)
         {
             startButton.gameObject.SetActive(true);
