@@ -38,7 +38,7 @@ namespace Complete
             // IMPORTANTE: Solo el dueño mueve su tanque
             // Si usas NetworkTransform normal, el cliente no tiene autoridad "física"
             // Para este tutorial, desactivamos kinematic en el dueño para que las teclas funcionen
-            m_Rigidbody.isKinematic = !IsOwner;
+            //m_Rigidbody.isKinematic = !IsOwner;
         }
 
         private void ApplyColor(Color c)
@@ -50,7 +50,7 @@ namespace Complete
 
         private void Update()
         {
-            if (!IsOwner) return;
+            //if (!IsOwner) return;
 
             m_MovementInputValue = Input.GetAxis("Vertical");
             m_TurnInputValue = Input.GetAxis("Horizontal");
@@ -59,7 +59,7 @@ namespace Complete
 
         private void FixedUpdate()
         {
-            if (!IsOwner) return;
+            //if (!IsOwner) return;
             Move();
             Turn();
         }
