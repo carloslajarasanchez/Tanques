@@ -18,9 +18,12 @@ namespace Complete
         public NetworkVariable<int> m_CurrentLives = new NetworkVariable<int>(3, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         private bool m_Dead;
-        private Vector3 m_SpawnPosition;
-        private Quaternion m_SpawnRotation;
-        private bool m_SpawnPointSaved = false; // Nos asegura guardar el spawn correcto
+        private Rigidbody m_Rigidbody;
+
+        private void Awake()
+        {
+            m_Rigidbody = GetComponent<Rigidbody>();
+        }
 
         public override void OnNetworkSpawn()
         {
@@ -36,18 +39,6 @@ namespace Complete
             SetHealthUI(m_CurrentHealth.Value);
         }
 
-        private void Update()
-        {
-            // SOLUCIÓN SPRAWN: Esperamos a que el tanque se mueva de la posición cero (0,0,0) 
-            // para registrar su verdadero punto de partida asignado por el GameManager.
-            if (!m_SpawnPointSaved && transform.position != Vector3.zero)
-            {
-                m_SpawnPosition = transform.position;
-                m_SpawnRotation = transform.rotation;
-                m_SpawnPointSaved = true;
-            }
-        }
-
         public override void OnNetworkDespawn()
         {
             m_CurrentHealth.OnValueChanged -= OnHealthChanged;
@@ -60,8 +51,7 @@ namespace Complete
 
         public void TakeDamage(float amount)
         {
-            if (!IsServer) return;
-            if (m_Dead) return;
+            if (!IsServer || m_Dead) return;
 
             m_CurrentHealth.Value -= amount;
 
@@ -119,37 +109,92 @@ namespace Complete
             }
         }
 
-        // Ahora es pública para que la llame el GameUIManager
+        // ==========================================
+        // REAPARICIÓN EN LOS SPAWNPOINTS DE TU IMAGEN
+        // ==========================================
         public void Respawn()
         {
+            if (!IsServer) return;
+
             m_CurrentHealth.Value = m_StartingHealth;
             m_Dead = false;
 
-            // SOLUCIÓN BARRA DE VIDA: Forzamos la reactivación total de componentes y UI en los clientes
-            // ANTES de recolocar el tanque, asegurando que el Canvas vuelva a existir.
-            TeleportAndResetClientRpc(m_SpawnPosition, m_SpawnRotation);
+            // Posiciones por defecto por si fallara la búsqueda (centro del mapa)
+            Vector3 targetPosition = Vector3.zero;
+            Quaternion targetRotation = Quaternion.identity;
+
+            // Asignamos el punto según tu captura del PlayerSpawner:
+            // Host (ID 0) va a "SpawnPoint1". Cliente (ID 1) va a "SpawnPoint2".
+            string spawnName = (OwnerClientId == 0) ? "SpawnPoint1" : "SpawnPoint2";
+            GameObject spawnPointObject = GameObject.Find(spawnName);
+
+            if (spawnPointObject != null)
+            {
+                targetPosition = spawnPointObject.transform.position;
+                targetRotation = spawnPointObject.transform.rotation;
+            }
+            else
+            {
+                // Plan B: Si no los encuentra sueltos, los busca dentro del padre "PlayerSpawner"
+                GameObject spawner = GameObject.Find("PlayerSpawner");
+                if (spawner != null)
+                {
+                    Transform fallbackSpawn = spawner.transform.Find(spawnName);
+                    if (fallbackSpawn != null)
+                    {
+                        targetPosition = fallbackSpawn.position;
+                        targetRotation = fallbackSpawn.rotation;
+                    }
+                }
+                else
+                {
+                    Debug.LogError($"[TankHealth] ¡Error crítico! No se encuentra el objeto '{spawnName}' en la escena.");
+                }
+            }
+
+            // Forzamos la detención de físicas en el Servidor antes de mover
+            if (m_Rigidbody != null)
+            {
+                m_Rigidbody.isKinematic = true;
+                m_Rigidbody.velocity = Vector3.zero;
+                m_Rigidbody.angularVelocity = Vector3.zero;
+            }
+
+            // Teletransportamos al tanque a su posición de inicio real
+            transform.position = targetPosition;
+            transform.rotation = targetRotation;
+
+            if (m_Rigidbody != null)
+            {
+                m_Rigidbody.isKinematic = false;
+            }
+
+            // Mandamos las coordenadas exactas calculadas a las pantallas de los clientes
+            ResetVisualsAndPhysicsClientRpc(targetPosition, targetRotation);
         }
 
         [ClientRpc]
-        private void TeleportAndResetClientRpc(Vector3 position, Quaternion rotation)
+        private void ResetVisualsAndPhysicsClientRpc(Vector3 targetPosition, Quaternion targetRotation)
         {
-            // 1. Primero encendemos todo el tanque y su interfaz
-            SetTankActiveState(true);
-
-            // 2. Colocamos el tanque en su base real guardada
-            transform.position = position;
-            transform.rotation = rotation;
-
-            // 3. Reseteamos físicas e inercias
-            Rigidbody rb = GetComponent<Rigidbody>();
-            if (rb != null)
+            if (m_Rigidbody != null)
             {
-                rb.velocity = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
+                m_Rigidbody.isKinematic = true;
+                m_Rigidbody.velocity = Vector3.zero;
+                m_Rigidbody.angularVelocity = Vector3.zero;
             }
 
-            // 4. Forzamos la actualización visual de la barra de vida a 100
+            // Forzamos el cambio de posición en el cliente para sincronizar el NetworkTransform
+            transform.position = targetPosition;
+            transform.rotation = targetRotation;
+
+            // Activamos barras de vida, mallas de renderizado y el círculo verde del suelo
+            SetTankActiveState(true);
             SetHealthUI(m_StartingHealth);
+
+            if (m_Rigidbody != null)
+            {
+                m_Rigidbody.isKinematic = false;
+            }
         }
 
         [ClientRpc]
@@ -160,15 +205,18 @@ namespace Complete
 
         private void SetTankActiveState(bool active)
         {
-            foreach (var r in GetComponentsInChildren<MeshRenderer>()) r.enabled = active;
-            foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = active;
+            // Forzamos la activación incluyendo objetos desactivados (parámetro true)
+            foreach (Renderer r in GetComponentsInChildren<Renderer>(true)) r.enabled = active;
+            foreach (Projector p in GetComponentsInChildren<Projector>(true)) p.enabled = active;
+            foreach (Collider c in GetComponentsInChildren<Collider>(true)) c.enabled = active;
 
             TankMovement movement = GetComponent<TankMovement>();
-            TankShooting shooting = GetComponent<TankShooting>();
             if (movement != null) movement.enabled = active;
+
+            TankShooting shooting = GetComponent<TankShooting>();
             if (shooting != null) shooting.enabled = active;
 
-            Canvas canvas = GetComponentInChildren<Canvas>();
+            Canvas canvas = GetComponentInChildren<Canvas>(true);
             if (canvas != null) canvas.gameObject.SetActive(active);
         }
     }
